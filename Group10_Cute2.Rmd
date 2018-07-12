@@ -1,0 +1,363 @@
+---
+title: "Group10_Cute2"
+author: "Broto Bhattacharjee"
+date: "June 1, 2018"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+# Clear environment
+```{r}
+rm(list = ls(all=TRUE))
+
+```
+
+
+# Load required R library
+```{r}
+library(MASS)
+library(car)
+library(corrplot)
+library(stringr)
+library(vegan)
+library(ROCR)
+library(zoo)
+library(dplyr)
+library(TTR)
+library(forecast)
+library(DMwR)
+library(data.table)
+```
+
+
+# Set working directory
+```{r}
+setwd("C://Users//brbhatta//Desktop//INSOFE//Cute2")
+```
+
+
+# Read the dataset
+```{r}
+train_data <- read.csv(file = "train_data.csv", header = TRUE)
+test_data <- read.csv(file = "test_data.csv", header = TRUE)
+```
+
+
+# Explore and understand the data
+Head
+```{r}
+head(train_data)
+```
+
+Tail
+```{r}
+tail(train_data)
+```
+
+Structure
+```{r}
+str(train_data)
+```
+
+Summary
+```{r}
+summary(train_data)
+```
+
+Find NA values
+```{r}
+sum(is.na(train_data)) # Total NA Values = 33349
+```
+
+Find rows where most of the columns are NA
+```{r}
+Rows_Age_NA <- subset(train_data, is.na(train_data$age))
+Rows_Age_NA
+
+```
+
+* We see above that there are 2 rows where 13 out of 18 columns are NA. So we do not consider these 2 rows while creating our model.
+```{r}
+train_data <- subset(train_data, train_data$age != 'NA')
+summary(train_data)
+```
+
+# See the mode of the columns which have NA values
+* Write a function for calculating Mode
+```{r}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+
+See the Mode of NA columns in train_data
+```{r}
+Mode(train_data$working_sector)
+Mode(train_data$occupation)
+Mode(train_data$country)
+```
+
+See the Mode of NA columns in test_data
+```{r}
+Mode(test_data$working_sector)
+Mode(test_data$occupation)
+Mode(test_data$country)
+```
+
+Impute working_sector, occupation, country with Mode in train_data
+```{r}
+train_data$working_sector[is.na(train_data$working_sector)] <- Mode(train_data$working_sector)
+train_data$occupation[is.na(train_data$occupation)] <- Mode(train_data$occupation)
+train_data$country[is.na(train_data$country)] <- Mode(train_data$country)
+```
+
+Impute tax_paid with 0
+```{r}
+train_data$tax_paid[is.na(train_data$tax_paid)] <- 0
+
+# Check if there are any NA values
+sum(is.na(train_data$working_sector))
+sum(is.na(train_data$occupation))
+sum(is.na(train_data$country))
+sum(is.na(train_data$tax_paid))
+```
+
+# See the summary of train_data after imputing
+```{r}
+summary(train_data)
+```
+
+# Standardize numerical attributes
+```{r}
+Data_NumAtr <- subset(x=train_data, select=c(age, financial_weight, years_of_education, gain, loss, working_hours))
+Std_Data <- decostand(x = Data_NumAtr, method = "range")
+```
+
+# Include the categorical attributes again without 'index' column
+```{r}
+Std_Data$working_sector <- train_data$working_sector
+Std_Data$qualification <- train_data$qualification
+Std_Data$loan_taken <- train_data$loan_taken
+Std_Data$marital_status <- train_data$marital_status
+Std_Data$occupation <- train_data$occupation
+Std_Data$relationship <- train_data$relationship
+Std_Data$ethnicity <- train_data$ethnicity
+Std_Data$gender <- train_data$gender
+Std_Data$country <- train_data$country
+Std_Data$y <- train_data$target
+```
+
+# See the summary of Std_Data
+```{r}
+summary(Std_Data)
+dim(Std_Data)
+dim(train_data)
+```
+
+# Creating the logistic regression model
+```{r}
+log_reg <- glm(y~., data = Std_Data, family = binomial)
+```
+
+
+```{r}
+vif(log_reg)
+```
+
+```{r}
+model_aic <- stepAIC(log_reg, direction = "both")
+summary(model_aic)
+```
+
+
+```{r}
+corrplot(cor(Std_Data, use = "complete.obs"), method = "number")
+```
+
+```{r}
+cor(Std_Data$gain, Std_Data$y, use="complete.obs")
+```
+
+
+
+
+
+# See the summary of Logistic Regression
+```{r}
+summary(log_reg)
+```
+
+# Predicting using the logistic regression model
+
+# ROC
+# Predicted Values are between 0 and 1
+# The predict() function on the "glm" object of "binomial" family gives a probability score between 0 and 1, NOT the original levels (0 and 1) of the response variable 
+# Hence we must first choose a cutoff point for getting to the original levels of the response variables
+# To choose the cutoff point we will use the train data, as test data should not be used to make any decisions regarding the model
+
+# Creating an ROC plot
+#__Steps to create an ROC plot :__
+
+# 1) Get a list of predictions (probability scores) using the predict() function
+# Use the argument 'type = "response"' in the predict function to get a list of predictions between 0 and 1
+# By default if no dataset is mentioned, training data is used
+```{r}
+prob_train <- predict(log_reg, type = "response")
+```
+
+# Summary of prob_train
+```{r}
+summary(prob_train)
+```
+
+
+# The prediction object takes the probability scores and the original levels for theses data as input
+
+# 2) Using the ROCR package create a "prediction()" object
+# The prediction object contains a list of predictions (probability scores), 
+#   original class labels, cutoffs, false positives, true positives, true negatives, false negatives, 
+#   No. of positive predictions and No. of negative predictions corresponding to these cutoffs. Class distribution in the dataset.
+```{r}
+pred <- prediction(prob_train, Std_Data$y)
+```
+
+# Summary of pred
+```{r}
+summary(pred)
+```
+
+# As it is S4 class OOP in R we can call a value using '@'
+```{r}
+#pred@predictions
+#pred@labels
+#pred@cutoffs
+```
+
+# 3) Extract performance measures (True Positive Rate and False Positive Rate) using the "performance()" function from the ROCR package
+```{r}
+# The performance() function from the ROCR package helps us extract metrics such as True positive rate, False positive rate etc. from the prediction object, we created above.
+
+# Two measures (y-axis = tpr, x-axis = fpr) are extracted
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+```
+
+# 4) Plot the ROC curve using the extracted performance measures (TPR and FPR)
+```{r}
+
+plot(perf, col=rainbow(10), colorize = T, print.cutoffs.at = seq(0,1,0.05))
+```
+
+
+* Extract the AUC score of the ROC curve and store it in a variable named "auc"
+
+* Use the performance() function on the prediction object created above using the ROCR package, to extract the AUC score
+```{r}
+# Access the auc score from the performance object
+
+perf_auc <- performance(pred, measure = "auc")
+auc <- perf_auc@y.values[[1]]
+
+print(auc)
+```
+
+# Choose a Cutoff Value
+* Based on the trade off between TPR and FPR depending on the business domain, a call on the cutoff has to be made.
+* A cutoff of 0.25 can be chosen, because after 0.2 true positive rate in increasing slowly, but the false positive rate is increasing rapidly
+```{r}
+plot(perf, col=rainbow(10), colorize = T, print.cutoffs.at = 0.25) 
+```
+
+# Predictions on test data
+* After choosing a cutoff value of 0.25, let's predict the class labels on the test data using our model
+
+# Look at the test_data
+```{r}
+sum(is.na(test_data))  # 947 => 947 NA values are present in test_data
+summary(test_data)
+```
+
+# We find that 63 NA values in age, 804 NA values in tax_paid, 63 NA values in occupation, 17 NA values in country
+```{r}
+mean(is.na(test_data$working_sector)) ## 0.0645 => 6.45 % of working_sector are NA
+mean(is.na(test_data$tax_paid))  ## 0.8237 => 82.37 % of tax_paid are NA
+mean(is.na(test_data$occupation))  ## 0.0654 => 6.54 % of occupation are NA
+mean(is.na(test_data$country))  ## 0.0174 => 1.74 % of country are NA
+```
+
+
+# Impute working_sector, occupation, country with Mode in test_data
+```{r}
+test_data$working_sector[is.na(test_data$working_sector)] <- Mode(test_data$working_sector)
+test_data$occupation[is.na(test_data$occupation)] <- Mode(test_data$occupation)
+test_data$country[is.na(test_data$country)] <- Mode(test_data$country)
+```
+
+# Impute tax_paid with 0
+```{r}
+test_data$tax_paid[is.na(test_data$tax_paid)] <- 0
+
+# Check if there are any NA values
+sum(is.na(test_data$working_sector))
+sum(is.na(test_data$occupation))
+sum(is.na(test_data$country))
+sum(is.na(test_data$tax_paid))
+```
+
+
+# Standardize numerical attributes
+```{r}
+Data_NumAtr_Test <- subset(x=test_data, select=c(age, financial_weight, years_of_education, gain, loss, working_hours))
+Std_Data_Test <- decostand(x = Data_NumAtr_Test, method = "range")
+```
+
+# Include the categorical attributes again without 'index' column
+```{r}
+Std_Data_Test$working_sector <- test_data$working_sector
+Std_Data_Test$qualification <- test_data$qualification
+Std_Data_Test$loan_taken <- test_data$loan_taken
+Std_Data_Test$marital_status <- test_data$marital_status
+Std_Data_Test$occupation <- test_data$occupation
+Std_Data_Test$relationship <- test_data$relationship
+Std_Data_Test$ethnicity <- test_data$ethnicity
+Std_Data_Test$gender <- test_data$gender
+Std_Data_Test$country <- test_data$country
+```
+
+# See the summary of Std_Data
+```{r}
+summary(Std_Data_Test)
+dim(Std_Data_Test)
+dim(test_data)
+```
+
+
+# Predict on Test Data
+```{r}
+prob_test <- predict(log_reg, Std_Data_Test, type = "response")
+preds_test <- ifelse(prob_test > 0.25, "1", "0")
+summary(preds_test)
+```
+
+
+```{r}
+#preds_test
+```
+
+
+* Write the target variable with corresponding index into a data frame
+```{r}
+submission_df <- data.frame(index=test_data$index, target=preds_test)
+head(submission_df)
+```
+
+* Write the data_frame submission_df into a .csv file
+```{r}
+write.csv(submission_df, file="submission.csv", na="")
+```
+
+# Your answer passed the tests! Your score is 77.87%
+* Congratulations your accuracy is 77.86885
