@@ -1,0 +1,705 @@
+---
+title: "Predict bankrupt in the subsequent years or not."
+author: "Broto"
+date: "20 June 2018"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+**NOTE** Clear the environment
+
+```{r}
+
+rm(list = ls(all=TRUE))
+
+```
+## Goal
+
+* Based on various financial ratios , predict whether the company got bankrupt in the subsequent years or not. 
+
+## Agenda 
+
+* Get the data
+
+* Data Pre-processing
+
+* Build a model
+
+* Predictions
+
+* Communication
+
+### Libraries used
+
+```{r}
+
+library(ROSE)
+library(corrplot)
+library(caret)
+library(C50)
+library(rpart)
+library(rpart.plot)
+library(DMwR)
+library(class)
+library(mice)
+library(vegan)
+library(randomForest)
+library(inTrees)
+library(e1071)
+
+```
+## Reading & Understanding the Data
+
+### Read the Data
+
+```{r}
+
+setwd("C://Users//brbhatta//Desktop//INSOFE//Cute3")
+bank_data <- read.csv("train.csv")
+prediction_test_data <- read.csv("test.csv")
+```
+
+### Understand the data
+
+* Using the str(), summary(), head() and tail() functions to get the dimensions and types of attributes in the dataset
+
+* The dataset has 43004 observations and 65 variables
+
+```{r}
+
+str(bank_data)
+
+summary(bank_data)
+
+```
+
+```{r}
+
+head(bank_data)
+
+tail(bank_data)
+
+```
+
+### Data Description
+
+Attr1	net profit / total assets 
+Attr2	total liabilities / total assets 
+Attr3	working capital / total assets 
+Attr4	current assets / short-term liabilities 
+Attr5	[(cash + short-term securities + receivables - short-term liabilities) / (operating expenses - depreciation)] * 365 
+Attr6	retained earnings / total assets 
+Attr7	EBIT / total assets 
+Attr8	book value of equity / total liabilities 
+Attr9	sales / total assets 
+Attr10	equity / total assets 
+Attr11	(gross profit + extraordinary items + financial expenses) / total assets 
+Attr12	gross profit / short-term liabilities 
+Attr13	(gross profit + depreciation) / sales 
+Attr14	(gross profit + interest) / total assets 
+Attr15	(total liabilities * 365) / (gross profit + depreciation) 
+Attr16	(gross profit + depreciation) / total liabilities 
+Attr17	total assets / total liabilities 
+Attr18	gross profit / total assets 
+Attr19	gross profit / sales 
+Attr20	(inventory * 365) / sales 
+Attr21	sales (n) / sales (n-1) 
+Attr22	profit on operating activities / total assets 
+Attr23	net profit / sales 
+Attr24	gross profit (in 3 years) / total assets 
+Attr25	(equity - share capital) / total assets 
+Attr26	(net profit + depreciation) / total liabilities 
+Attr27	profit on operating activities / financial expenses 
+Attr28	working capital / fixed assets 
+Attr29	logarithm of total assets 
+Attr30	(total liabilities - cash) / sales 
+Attr31	(gross profit + interest) / sales 
+Attr32	(current liabilities * 365) / cost of products sold 
+Attr33	operating expenses / short-term liabilities 
+Attr34	operating expenses / total liabilities 
+Attr35	profit on sales / total assets 
+Attr36	total sales / total assets 
+Attr37	(current assets - inventories) / long-term liabilities 
+Attr38	constant capital / total assets 
+Attr39	profit on sales / sales 
+Attr40	(current assets - inventory - receivables) / short-term liabilities 
+Attr41	total liabilities / ((profit on operating activities + depreciation) * (12/365)) 
+Attr42	profit on operating activities / sales 
+Attr43	rotation receivables + inventory turnover in days 
+Attr44	(receivables * 365) / sales 
+Attr45	net profit / inventory 
+Attr46	(current assets - inventory) / short-term liabilities 
+Attr47	(inventory * 365) / cost of products sold 
+Attr48	EBITDA (profit on operating activities - depreciation) / total assets 
+Attr49	EBITDA (profit on operating activities - depreciation) / sales 
+Attr50	current assets / total liabilities 
+Attr51	short-term liabilities / total assets 
+Attr52	(short-term liabilities * 365) / cost of products sold) 
+Attr53	equity / fixed assets 
+Attr54	constant capital / fixed assets 
+Attr55	working capital 
+Attr56	(sales - cost of products sold) / sales 
+Attr57	(current assets - inventory - short-term liabilities) / (sales - gross profit - depreciation) 
+Attr58	total costs /total sales 
+Attr59	long-term liabilities / equity 
+Attr60	sales / inventory 
+Attr61	sales / receivables 
+Attr62	(short-term liabilities *365) / sales 
+Attr63	sales / short-term liabilities 
+Attr64	sales / fixed assets
+
+## Data Pre-processing
+
+#Verify the data types assigned to the variables in the dataset
+
+```{r}
+
+str(bank_data)
+
+```
+#Plot the data to understand
+
+```{r}
+par(mfrow = c(2,2))
+
+plot(bank_data[,"Attr9"],bank_data[,"Attr10"],xlab="sale / total assets",ylab="equity / total assets",type="p",main="sales and equity" )
+plot(bank_data[,"Attr18"],bank_data[,"Attr24"],xlab="gross profit / total assets",ylab="gross profit (in 3 years) / total assets",type="p",main="gross profit now and in 3 years" )
+plot(bank_data[,"Attr22"],bank_data[,"Attr7"],xlab="profit on operating activities / total assets ",ylab="EBIT / total assets",type="p",main="EBIT and profit on operating activities" )
+plot(bank_data[,"Attr2"],bank_data[,"Attr3"],xlab="total liabilities / total assets",ylab="working capital / total assets",type="p",main="working capital and total liabilities" )
+
+```
+
+#Feature Engineering 
+# Substracting current gross income from gross income in 3 years 
+```{r}
+
+str(bank_data)
+
+bank_data1= cbind(bank_data,data.frame(bank_data$Attr24-bank_data$Attr18))
+
+```
+
+#Check for missing values
+
+```{r}
+
+sum(is.na(bank_data))
+bank_data=centralImputation(bank_data)
+sum(is.na(bank_data))
+
+```
+### Check for class imbalance
+
+```{r}
+prop.table(table(bank_data$target))
+bank_data_rose <- ROSE(target~ ., data=bank_data, seed=111)$data
+prop.table(table(bank_data_rose$target))
+
+```
+
+#Find the corelation between the features.
+
+```{r fig.heigt=20, fig.width=20}
+cat_var="target"
+num_var=setdiff(names(bank_data),cat_var)
+corrplot( cor(bank_data_rose[,num_var]), method="circle", tl.cex = 0.5, tl.col = 'black',  order = "hclust", diag = FALSE)
+
+```
+
+```{r fig.heigt=20, fig.width=20}
+corrplot(cor(bank_data_rose[,num_var]), method="shade",type = "full")
+```
+
+# Split the Data into train and test sets
+
+* Use stratified sampling to split the data into train/test sets (70/30)
+
+* Use the createDataPartition() function from the caret package to do stratified sampling
+
+```{r}
+
+# Set the seed after attaching the caret package
+
+set.seed(111)
+
+# The first argument is the imbalanced class reference variable, the second is the proportion to sample
+
+# Remember to include list = F as the function returns a list otherwise which would not be able to subset a dataframe
+
+trainIndex <- createDataPartition(bank_data$target, p = .7, list = F)
+
+train_data <- bank_data[trainIndex, ]
+
+test_data <- bank_data[-trainIndex, ]
+```
+## Build a  Decision Tree
+### Model the tree
+
+* We will be using Quinlan's C5.0 decision tree algorithm implementation from the C50 package to build our decision tree
+
+```{r}
+train_data$target<-as.factor(train_data$target)
+test_data$target<-as.factor(test_data$target)
+str(train_data$target)
+c5_tree <- C5.0(target ~ . , train_data)
+
+# Use the rules = T argument if you want to extract rules later from the model
+
+c5_rules <- C5.0(target ~ . , train_data, rules = T)
+```
+
+### Variable Importance in trees
+
+* Find the importance of each variable in the dataset using the c5imp() function
+
+* The default metric "usage" in the c5imp function gives the percentage of data being split by using the attribute at that particular time. So variable used for splitting at the root node always has 100, and the variables at the leaf nodes might be close to 0 if there is no data remaining to classify  
+
+```{r}
+
+C5imp(c5_tree, metric = "usage")
+
+```
+
+### Rules from trees
+
+* Understand the summary of the returned c5.0 rules based on the decision tree model
+
+
+```{r}
+
+summary(c5_rules)
+
+```
+
+
+* From the output of the summary above, you can clearly understand the rules and their associated metrics such as lift and support
+
+- __This is great for explicability and can also be used for understanding interesting relationships in data, even if your final model is not a decision tree__
+
+### Plotting the tree
+
+* Call the plot function on the tree object to visualize the tree
+
+```{r, fig.width= 35, fig.height=15}
+
+plot(c5_tree)
+
+```
+
+
+## Evaluating the model
+
+### Predictions on the test data
+
+* We'll evaluate the decision tree using the standard error metrics on test data
+
+```{r}
+preds <- predict(c5_tree, train_data)
+preds1 <- predict(c5_tree, test_data)
+```
+
+* Error metrics for classification can be accessed through the "confusionMatrix()" function from the caret package
+
+```{r}
+conf_train=confusionMatrix(preds, train_data$target, positive = "0")
+conf_test=confusionMatrix(preds1, test_data$target, positive = "0")
+conf_train
+conf_test
+```
+#Finding the F1 score since it is very important to have high precision and recall for this problem
+#Print F1 score
+```{r}
+F1_score<-function(Recall, Precision)   {
+     F1<-2*Recall*Precision/(Recall+Precision)
+     return(F1)
+}
+
+recall_test <- sensitivity(preds1, test_data$target)
+precision_test <- posPredValue(preds1, test_data$target)
+
+F1_model_c5<-F1_score(recall_test,precision_test)
+
+print(F1_model_c5)
+```
+# CART Trees
+
+* The classification and regression trees use gini index in place of the gain ratio (based on information gain) used by the ID3 based algorithms, such as c4.5 and c5.0
+
+## Goal
+
+* The goal of this activity is to predict the imbd score of a movie using a classification and regression tree (cart)
+```{r}
+
+reg_tree <- rpart(target ~ ., train_data,method='class')
+
+printcp(reg_tree)
+
+```
+
+### Tree Explicability
+
+* The variable importance can accessed accessing variable.importance from the reg.tree list
+
+```{r}
+
+reg_tree$variable.importance
+
+```
+
+* We can plot the regression tree using the rpart.plot() function from the rpart.plot package
+
+```{r, fig.width=8, fig.height=5}
+
+rpart.plot(reg_tree)
+
+```
+## Evaluating the model
+
+### Predictions on the test data
+
+* We'll evaluate the decision tree using the standard error metrics on test data
+
+```{r}
+summary(reg_tree) # detailed summary of splits
+pred2 = predict(reg_tree, train_data,type = "class")
+pred3 = predict(reg_tree, test_data,type = "class")
+
+table(pred2, train_data$target)
+table(pred3, test_data$target)
+```
+
+#Error metrics for classification can be accessed through the "confusionMatrix()" function from the caret package
+
+```{r}
+
+conf_train=confusionMatrix(pred2, train_data$target, positive = "0")
+conf_test=confusionMatrix(pred3, test_data$target, positive = "0")
+conf_train
+conf_test
+```
+#Finding the F1 score since it is very important to have high precision and recall for this problem
+#Print F1 score
+```{r}
+recall_test <- sensitivity(pred3, test_data$target)
+precision_test <- posPredValue(pred3, test_data$target)
+
+F1_model_rpart<-F1_score(recall_test,precision_test)
+
+print(F1_model_rpart)
+```
+#Build KNN model
+
+```{r}
+
+  # N = 1/3/5/7
+  Neigh <-3
+  pred=knn(train_data[,num_var], test_data[,num_var],train_data$target , k = Neigh)
+  a=table(pred,test_data$target)
+
+```
+
+#Error metrics for classification can be accessed through the "confusionMatrix()" function from the caret package
+
+```{r}
+conf_test=confusionMatrix(pred, test_data$target, positive = "0")
+conf_test
+```
+#Finding the F1 score since it is very important to have high precision and recall for this problem
+#Print F1 score
+```{r}
+recall_test <- sensitivity(pred, test_data$target)
+precision_test <- posPredValue(pred, test_data$target)
+
+F1_model_knn<-F1_score(recall_test,precision_test)
+
+print(F1_model_knn)
+accu= sum(diag(a))/sum(a)
+accu
+```
+# Model Building using Random Forest and tuning
+```{r}
+# Build the classification model using randomForest
+model = randomForest(target ~ ., data=train_data, 
+                      keep.forest=TRUE, ntree=50) 
+
+# Print and understand the model
+print(model)
+```
+
+# Important attributes
+```{r}
+model$importance  
+round(importance(model), 2)   
+```
+
+# Extract and store important variables obtained from the random forest model
+```{r}
+rf_Imp_Attr = data.frame(model$importance)
+rf_Imp_Attr = data.frame(row.names(rf_Imp_Attr),rf_Imp_Attr[,1])
+colnames(rf_Imp_Attr) = c('Attributes', 'Importance')
+rf_Imp_Attr = rf_Imp_Attr[order(rf_Imp_Attr$Importance, decreasing = TRUE),]
+rf_Imp_Attr
+```
+
+# plot (directly prints the important attributes)
+```{r fig.heigt=20, fig.width=20}
+varImpPlot(model)
+```
+
+# Predict on Train data 
+```{r}
+pred_Train_rd = predict(model, 
+                     train_data[,setdiff(names(train_data), "target")],
+                     type="response", 
+                     norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy
+```{r}
+cm_Train = table("actual"= train_data$target, "predicted" = pred_Train_rd);
+accu_Train= sum(diag(cm_Train))/sum(cm_Train)
+#rm(pred_Train_rd, cm_Train)
+```
+
+# Predicton Test Data
+```{r}
+pred_Test_rd = predict(model, test_data[,setdiff(names(test_data),
+                                              "target")],
+                    type="response", 
+                    norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy
+```{r}
+cm_Test = table("actual"=test_data$target, "predicted"=pred_Test_rd);
+accu_Test= sum(diag(cm_Test))/sum(cm_Test)
+#rm(pred_Test, cm_Test)
+```
+
+# Check the accuracy in train and test
+```{r}
+accu_Train
+accu_Test
+```
+
+# Build randorm forest using top 9 important attributes. 
+```{r}
+top_Imp_Attr = as.character(rf_Imp_Attr$Attributes[1:9])
+```
+
+# Build the classification model using randomForest
+```{r}
+model_Imp = randomForest(target~.,
+                         data=train_data[,c(top_Imp_Attr,"target")], 
+                         keep.forest=TRUE,ntree=50) 
+```
+
+# Print and understand the model
+```{r}
+print(model_Imp)
+```
+
+# Important attributes
+```{r}
+model_Imp$importance
+```
+
+# Predict on Train data 
+```{r}
+pred_Train_rd_attr = predict(model_Imp, train_data[,top_Imp_Attr],
+                     type="response", norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy 
+```{r}
+cm_Train = table("actual" = train_data$target, 
+                 "predicted" = pred_Train_rd_attr);
+accu_Train_Imp = sum(diag(cm_Train))/sum(cm_Train)
+#rm(pred_Train, cm_Train)
+```
+
+# Predicton Test Data
+```{r}
+pred_Test_rd_attr = predict(model_Imp, test_data[,top_Imp_Attr],
+                    type="response", norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy
+```{r}
+cm_Test = table("actual" = test_data$target, 
+                "predicted" = pred_Test_rd_attr);
+accu_Test_Imp = sum(diag(cm_Test))/sum(cm_Test)
+#rm(pred_Test, cm_Test)
+```
+
+# Print the accuracy
+```{r}
+accu_Train
+accu_Test
+accu_Train_Imp
+accu_Test_Imp
+```
+
+# Top Important attributes
+```{r}
+top_Imp_Attr = as.character(rf_Imp_Attr$Attributes[1:9])
+set.seed(123)
+x <- train_data[,!(names(train_data) %in% c("target"))]
+y <- train_data[,(names(train_data) %in% c("target"))]
+str(y)
+tunedmodel <-tuneRF(x, y, ntreeTry = 50, trace=TRUE, plot=TRUE, doBest = TRUE)
+```
+
+# Print the tuned model
+```{r}
+print(tunedmodel)
+```
+
+
+```{r fig.width= 35, fig.height=15}
+tunedmodel$importance
+varImpPlot(tunedmodel)
+```
+
+
+# Predict on Train data 
+```{r}
+pred_Train_rd_tune = predict(tunedmodel, train_data,
+                     type="response", norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy 
+```{r}
+cm_Train = table("actual" = train_data$target, 
+                 "predicted" = pred_Train_rd_tune);
+accu_Train = sum(diag(cm_Train))/sum(cm_Train)
+#rm(pred_Train, cm_Train)
+```
+
+# Predicton Test Data
+```{r}
+pred_Test_rd_tune = predict(tunedmodel, test_data,
+                    type="response", norm.votes=TRUE)
+```
+
+# Build confusion matrix and find accuracy 
+```{r}
+cm_Test = table("actual" = test_data$target, 
+                "predicted" = pred_Test_rd_tune);
+accu_Test = sum(diag(cm_Test))/sum(cm_Test)
+#rm(pred_Test, cm_Test)
+```
+
+# Get the accuracy on train and test
+```{r}
+accu_Train
+accu_Test
+```
+
+#Error metrics for classification can be accessed through the "confusionMatrix()" function from the caret package
+
+```{r}
+conf_train_rd=confusionMatrix(pred_Train_rd, train_data$target, positive = "0")
+conf_test_rd=confusionMatrix(pred_Test_rd, test_data$target, positive = "0")
+```
+
+```{r}
+conf_train_rd_attr=confusionMatrix(pred_Train_rd_attr, train_data$target, positive = "0")
+conf_test_rd_attr=confusionMatrix(pred_Test_rd_attr, test_data$target, positive = "0")
+```
+
+
+```{r}
+conf_train_rd_tune=confusionMatrix(pred_Train_rd_tune, train_data$target, positive = "0")
+conf_test_rd_tune=confusionMatrix(pred_Test_rd_tune, test_data$target, positive = "0")
+```
+
+
+```{r}
+conf_train_rd
+
+```
+
+```{r}
+conf_test_rd
+
+```
+
+```{r}
+conf_train_rd_attr
+
+```
+
+```{r}
+conf_test_rd_attr
+
+```
+
+```{r}
+conf_train_rd_tune
+
+```
+
+```{r}
+conf_test_rd_tune
+```
+
+#Finding the F1 score since it is very important to have high precision and recall for this problem
+#Print F1 score
+```{r}
+recall_test_rd <- sensitivity(pred_Test_rd, test_data$target)
+precision_test_rd <- posPredValue(pred_Test_rd, test_data$target)
+```
+
+```{r}
+recall_test_rd_attr <- sensitivity(pred_Test_rd_attr, test_data$target)
+precision_test_rd_attr <- posPredValue(pred_Test_rd_attr, test_data$target)
+```
+
+
+```{r}
+recall_test_rd_tune <- sensitivity(pred_Test_rd_tune, test_data$target)
+precision_test_rd_tune <- posPredValue(pred_Test_rd_tune, test_data$target)
+```
+
+```{r}
+F1_model_rpart_rd<-F1_score(recall_test_rd,precision_test_rd)
+F1_model_rpart_rd_attr<-F1_score(recall_test_rd_attr,precision_test_rd_attr)
+F1_model_rpart_rd_tune<-F1_score(recall_test_rd_tune,precision_test_rd_tune)
+```
+
+```{r}
+print(F1_model_rpart_rd)
+print(F1_model_rpart_rd_attr)
+print(F1_model_rpart_rd_tune)
+```
+
+```{r}
+test_data$ID
+```
+
+
+```{r}
+preds_prediction_test_data <- predict(c5_tree, prediction_test_data)
+
+pred_knn = knn(train_data[,num_var], prediction_test_data[,num_var], train_data$target, k = 3)
+b = table(pred,test_data$target)
+```
+
+
+
+
+
+
+# Write the final prediction to broto_submission.csv
+```{r}
+index_value <- data.frame(index = test_data$ID, prediction = test_data$target)
+write.csv(index_value, "broto_submission_bankruptcy.csv", na="")
+```
+
